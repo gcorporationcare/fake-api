@@ -1,4 +1,5 @@
 const express = require('express');
+const morgan = require('morgan');
 const utils = require('./utils');
 
 const app = express();
@@ -30,6 +31,8 @@ const SEQUENCE = {
 //------------------------------------------------------------------------------
 // Endpoints
 //------------------------------------------------------------------------------
+app.use(morgan('combined'));
+
 //enable CORS for request verbs
 app.use((req, res, next) => {
     res.header("Content-Type", "application/json");

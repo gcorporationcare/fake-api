@@ -161,6 +161,8 @@ The API currently supports these operators:
 - **lesser than or equal**: <=
 - **in**: in
 - **not in**: notIn
+- **like**: like
+- **not like**: notLike
 
 Here are some examples:
 
@@ -177,6 +179,18 @@ Here are some examples:
 - http://localhost:3000/posts?page=1&size=5&**filters=title%3B%3E%3Ba**&**filters=id%3B%3E%3B10**&**filters=id%3Bin%3B%5B12%2C13%5D**<br/>
   This request will return exactly 2 records since only 2 posts have a _title_ greater than _a_ **and** an _id_ greater than _10_ **and** an _id_ in the array _[12, 13]_.
   > The non escaped version of filters are respectively **title;>;a**, **id;>;10** and **id;in;[12,13]**.
+
+Please also keep in mind that you can do (basic) logical operations between one filter operations and the previously applied ones.
+By default, when multiple filtering operations are applied, the API will do an **and-operation** (condition_N && condition_N+1 &&...).
+You can alter this behavior by prefixing the field's name of the next operation with a **pipe (|)**. (condition_N || condition_N+1 || ...).
+All operations are applied in FIFO, without any relation of priority between them: `condition_N || condition_N+1 && condition_N+2` will apply the mathematical operation `(condition_N || condition_N+1) && condition_N+2`.
+
+- http://localhost:3000/posts?page=1&size=10&**filters=id%3Bin%3B%5B2%2C4%2C6%2C8%2C10%2C12%2C14%5D**&**filters=id%3Bin%3B%5B2%2C4%2C6%2C8%2C10%2C12%2C14%5D**<br/>
+  This request return the posts with the IDs **6** & **12** since they are the sole intersections between the set `[2,4,6,8,10,12,14]` and the set `[3,6,9,12]`.
+
+- http://localhost:3000/posts?page=1&size=10&**filters=id%3Bin%3B%5B2%2C4%2C6%2C8%2C10%2C12%2C14%5D**&**filters=%7Cid%3Bin%3B%5B3%2C6%2C9%2C12%5D**<br/>
+  This request return 9 posts which have their IDs in at least one of the two sets `[2,4,6,8,10,12,14]` and the set `[3,6,9,12]`.
+  > Mark the presence of the escaped pipe character **%7C** at the start of the second filters parameter.
 
 ### TODO
 

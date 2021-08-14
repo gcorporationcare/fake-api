@@ -1,18 +1,5 @@
 const fs = require("fs");
 
-/**
- * List of available operators
- */
-exports.OPERATORS = {
-    equal: '==',
-    notEqual: '!=',
-    greaterThan: '>',
-    greaterThanOrEqual: '>=',
-    lesserThan: '<',
-    lesserThanOrEqual: '<=',
-    in: 'in',
-    notIn: 'notIn'
-};
 
 /**
  * Read data from JSON file
@@ -20,7 +7,9 @@ exports.OPERATORS = {
  * @returns a JSON array
  */
 exports.readDataFile = (file) => {
-    return JSON.parse(fs.readFileSync(`${__dirname}/data/${file}.json`, 'utf8'));
+    return JSON.parse(
+        fs.readFileSync(`${__dirname}/data/${file}.json`, 'utf8')
+    );
 };
 
 /**
@@ -62,63 +51,20 @@ exports.pagedData = (page, size, array) => {
     };
 };
 
-
-/**
- * Parse filters and returns safe filters ready for use
- * @param {*} filter the string form of filters to apply
- * @param {any[]} records the records to apply filters on 
- * @returns the filtered records
- */
-exports.applyFilter = (field, operator, value, records) => {
-    switch (operator) {
-        case this.OPERATORS.equal:
-        case this.OPERATORS.notEqual:
-            return _applyEqualFilter(field, operator, value, records);
-        case this.OPERATORS.greaterThan:
-        case this.OPERATORS.greaterThanOrEqual:
-            return _applyGreaterThanFilter(field, operator, value, records);
-        case this.OPERATORS.lesserThan:
-        case this.OPERATORS.lesserThanOrEqual:
-            return _applyLesserThanFilter(field, operator, value, records);
-        case this.OPERATORS.in:
-        case this.OPERATORS.notIn:
-            return _applyInFilter(field, operator, value, records);
-    }
-    return records;
-};
-
 /**
  * Apply filters on given data
  * @param {*} filters the array of filters to apply
  * @param {*} records the records to apply filters on 
- * @returns 
+ * @returns the filtered records
  */
 exports.filteredData = (filters, records) => {
     // 1- Preparing data
-    let filteredRecords = records;
-    if (this.isNullOrEmpty(filters)) {
+    if (this.isNullOrEmpty(records) || this.isNullOrEmpty(filters)) {
         // No filters to apply
-        return filteredRecords;
-    }
-    let filtersArray = Array.isArray(filters) ? filters : [filters];
-
-    // 2- Applying filters on records
-    filtersArray.forEach(element => {
-        const filter = element.split(';');
-        if (this.isNullOrEmpty(filteredRecords) || filter.length < 2) {
-            // Invalid parameters, looking for next one
-            return;
-        }
-        const field = filter[0];
-        const operator = filter[1];
-        const value = filter.length > 2 ? filter[2] : null;
-        if (!operator || !field) {
-            // Invalid operator parameter, next occurrence
-            return;
-        }
-        filteredRecords = this.applyFilter(field, operator, value, filteredRecords);
-    });
-    return filteredRecords;
+        return records;
+    } // 2- Selected consistent filters and applying to records
+    const cleanedFilters = safeFilters(filters);
+    return applyFilters(cleanedFilters, records);
 };
 
 /**
@@ -192,38 +138,152 @@ exports.findById = (req, res, database) => {
 // -----------------------------------------------------------------------------
 // PRIVATE METHODS
 // -----------------------------------------------------------------------------
-const _applyInFilter = (field, operator, value, records) => {
-    if (this.OPERATORS.in === operator) {
-        return records.filter((record) => JSON.parse(value).includes(record[field]));
-    } else if (this.OPERATORS.notIn === operator) {
-        return records.filter((record) => !JSON.parse(value).includes(record[field]));
+/**
+ * Apply filters operations to given list of records
+ * @param {any[]} filters the cleaned filters, list of {field, operator, value, isAndOperation}
+ * @param {any[]} records the records to apply filters on
+ * @returns the records matching all logical conditions (and/or) in filters
+ */
+const applyFilters = (filters, records) => {
+    if (this.isNullOrEmpty(filters) || this.isNullOrEmpty(records)) {
+    // 1- If no record or no filters, no need to go further...
+        return records;
     }
-    return records;
+    const idField = 'id';
+    if (filters.length === 1) {
+        // 2- We will loop through the array taking items by pair
+        // In case there is a single filtering operations to apply, we add
+        // another fake operation that will always resolve to true.
+        filters.push({
+            field: idField,
+            operator: 'greaterThan',
+            value: 0,
+            isAndOperation: true
+        });
+    }
+    let filteredRecords = records;
+    for (let index = 0; index < filters.length - 1; index++) {
+        // 3- Since we take two items at once, we won't need to take the last index into account
+        const firstFilter = filters[index];
+        const secondFilter = filters[index + 1];
+        if (secondFilter.isAndOperation) {
+            // 4- records must match Condition 1 AND condition 2
+            filteredRecords = filteredRecords.filter(
+                (record) => (
+                    OPERATORS_METHOD[firstFilter.operator](
+                        record, firstFilter.field, firstFilter.value
+                    ) &&
+                    OPERATORS_METHOD[secondFilter.operator](
+                        record, secondFilter.field, secondFilter.value
+                    )
+                )
+            );
+        } else {
+            // 5- records must match Condition 1 OR condition 2
+            filteredRecords = filteredRecords.filter(
+                (record) => (
+                    OPERATORS_METHOD[firstFilter.operator](
+                        record, firstFilter.field, firstFilter.value
+                    ) ||
+                    OPERATORS_METHOD[secondFilter.operator](
+                        record, secondFilter.field, secondFilter.value
+                    )
+                )
+            );
+        }
+        // 6- The next index will contains the result of the current operation
+        // See it as a temporary memory for further operations
+        filters[index + 1] = {
+            field: idField,
+            operator: 'in',
+            value: JSON.stringify(filteredRecords.map((record) => record.id))
+        };
+    }
+    // 7- Returning the final records
+    return filteredRecords;
+}
+
+/**
+ * Transform string filters into usable object of safe filters
+ * @param {string} filters the string received from API
+ * @returns a list of valid filtering operations {field, operator, value, isAndOperation}
+ */
+const safeFilters = (filters) => {
+    if (this.isNullOrEmpty(filters)) {
+        // 1- No filters to apply
+        return records;
+    }
+    let index = 0;
+    let filtersArray = Array.isArray(filters) ? filters : [filters];
+
+    return filtersArray.map((filterElement) => {
+        // 2- Reading operands from string filter
+        const filter = filterElement.split(OPERATORS_DELIMITER);
+        if (filter.length < 2) {
+            // Invalid parameters, looking for next one
+            return;
+        }
+
+        // 3- Establishing which kind of operation must be applied (and/or)
+        let isAndOperation = true;
+        let field = filter[0];
+        if (field.startsWith(OPERATORS_OR)) {
+            // On first operations, we do not want to allow OR since it will always resolve to all records
+            // Later when applying with previous operation
+            isAndOperation = index === 0;
+            // Removing extra character
+            field = field.substring(OPERATORS_OR.length);
+        }
+
+        // 4- Checking operator consistency
+        const operator = Object.keys(OPERATORS).filter(
+            (key) => OPERATORS[key] === filter[1]
+        );
+        const value = filter.length > 2 ? filter[2] : null;
+        if (this.isNullOrEmpty(operator) || !field) {
+            // Invalid operator parameter, next occurrence
+            return;
+        }
+        index++;
+        return {
+            field,
+            operator: operator[0],
+            value,
+            isAndOperation
+        };
+    });
 };
 
-const _applyLesserThanFilter = (field, operator, value, records) => {
-    if (this.OPERATORS.lesserThan === operator) {
-        return records.filter((record) => record[field] < value);
-    } else if (this.OPERATORS.lesserThanOrEqual === operator) {
-        return records.filter((record) => record[field] <= value);
-    }
-    return records;
+/**
+ * List of available operators
+ */
+const OPERATORS = {
+    equal: '==',
+    notEqual: '!=',
+    greaterThan: '>',
+    greaterThanOrEqual: '>=',
+    lesserThan: '<',
+    lesserThanOrEqual: '<=',
+    in: 'in',
+    notIn: 'notIn',
+    like: 'like',
+    notLike: 'notLike',
 };
 
-const _applyEqualFilter = (field, operator, value, records) => {
-    if (this.OPERATORS.equal === operator) {
-        return records.filter((record) => record[field] === value);
-    } else if (this.OPERATORS.notEqual === operator) {
-        return records.filter((record) => record[field] !== value);
-    }
-    return records;
-};
-
-const _applyGreaterThanFilter = (field, operator, value, records) => {
-    if (this.OPERATORS.greaterThan === operator) {
-        return records.filter((record) => record[field] > value);
-    } else if (this.OPERATORS.greaterThanOrEqual === operator) {
-        return records.filter((record) => record[field] >= value);
-    }
-    return records;
-};
+/**
+ * Filtering method matching supported operators
+ */
+const OPERATORS_METHOD = {
+    equal: (record, field, value) => record[field] === value,
+    notEqual: (record, field, value) => record[field] !== value,
+    greaterThan: (record, field, value) => record && record[field] > value,
+    greaterThanOrEqual: (record, field, value) => record && record[field] >= value,
+    lesserThan: (record, field, value) => record && record[field] < value,
+    lesserThanOrEqual: (record, field, value) => record && record[field] <= value,
+    in: (record, field, value) => JSON.parse(value).includes(record[field]),
+    notIn: (record, field, value) => !JSON.parse(value).includes(record[field]),
+    like: (record, field, value) => record && `${record[field]}`.includes(`${value}`),
+    notLike: (record, field, value) => record && !`${record[field]}`.includes(`${value}`)
+}
+const OPERATORS_DELIMITER = ';';
+const OPERATORS_OR = '|';
