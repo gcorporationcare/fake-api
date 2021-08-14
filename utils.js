@@ -106,7 +106,7 @@ exports.isNullOrEmpty = (array) => {
  */
 exports.findAll = (req, res, database) => {
     const records = database[req.params.model];
-    if (this.isNullOrEmpty(records)) {
+    if (!records) {
         this.notFound(res);
         return null;
     }
@@ -121,7 +121,7 @@ exports.findAll = (req, res, database) => {
  * @returns the record with the ID in req params otherwise null
  */
 exports.findById = (req, res, database) => {
-    const records = findAll(req, res, database);
+    const records = this.findAll(req, res, database);
     const id = +req.params.id;
     if (this.isNullOrEmpty(records) || !id) {
         this.notFound(res);

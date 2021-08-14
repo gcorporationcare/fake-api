@@ -38,7 +38,7 @@ app.use((req, res, next) => {
     res.header("Content-Type", "application/json");
     res.header("Access-Control-Allow-Origin", "*");
     res.header("Access-Control-Allow-Headers", "Origin, X-Requested-With, Content-Type, Accept");
-    res.header("Access-Control-Allow-Methods", "POST, GET, PUT, DELETE, OPTIONS");
+    res.header("Access-Control-Allow-Methods", "POST, GET, PUT, PATCH, DELETE, OPTIONS");
     next();
 });
 
@@ -48,19 +48,21 @@ app.use(express.urlencoded({
 
 app.use(express.json());
 
-//Handle GET method for listing all records
+//Handle GET method for listing all or page of records
 app.get('/:model', (req, res) => {
     const records = utils.findAll(req, res, DATABASE);
     if (!records) {
         return;
     }
+    const all = req.query.all || false;
     const page = req.query.page || 1;
     const size = req.query.size || 10;
     const filters = req.query.filters || [];
     const filteredRecords = utils.filteredData(filters, records);
-    const result = utils.pagedData(page, size, filteredRecords);
+    const result = all ?
+        filteredRecords : utils.pagedData(page, size, filteredRecords);
     res.end(JSON.stringify(result));
-})
+});
 
 //Handle GET method to get only one record
 app.get('/:model/:id', (req, res) => {
@@ -69,7 +71,7 @@ app.get('/:model/:id', (req, res) => {
         return;
     }
     res.end(JSON.stringify(record));
-})
+});
 
 //Handle POST method for creating a new record
 app.post('/:model', (req, res) => {
@@ -86,7 +88,7 @@ app.post('/:model', (req, res) => {
     const newRecord = { ...req.body, id: newId };
     records.push(newRecord);
     res.end(JSON.stringify(newRecord));
-})
+});
 
 //Handle PUT method for modifying a record
 app.put('/:model/:id', (req, res) => {
@@ -107,10 +109,20 @@ app.delete('/:model/:id', (req, res) => {
     if (!record) {
         return;
     }
-    const removeIndex = records.map((item) => item.id).indexOf(record.id);
-    ~removeIndex && records.splice(removeIndex, 1);
-    res.end(JSON.stringify({removed: true}));
-})
+	const removeIndex = records.map((item) => item.id).indexOf(record.id);
+	~removeIndex && records.splice(removeIndex, 1);	
+    res.end(JSON.stringify({ removed: true }));
+});
+
+//Handle DELETE method for deleting all records
+app.delete('/:model', (req, res) => {
+    const records = utils.findAll(req, res, DATABASE);
+    if (!records) {
+        return;
+    }
+    records.splice(0, records.length);
+    res.end(JSON.stringify({ removed: true }));
+});
 
 app.listen(PORT, () => {
     console.log(`Server running at http://127.0.0.1:${PORT}/`);
