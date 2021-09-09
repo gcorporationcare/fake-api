@@ -192,9 +192,31 @@ All operations are applied in FIFO, without any relation of priority between the
   This request return 9 posts which have their IDs in at least one of the two sets `[2,4,6,8,10,12,14]` and the set `[3,6,9,12]`.
   > Mark the presence of the escaped pipe character **%7C** at the start of the second filters parameter.
 
+### Sorting
+
+This API provide a sorting feature triggered by the keyword **sortBy** in URL query parameters.<br/>
+
+> Each sorting operation is a new query parameter **sortBy** added to the URL.<br/>
+
+> For a single sorting operation, we must retrieve the field of the record to base the sorting on, and also the direction of this sorting, separated from field's name by a **colon** ("**,**").
+
+> Final URL will be similar to http://hostname/modelname?sortBy=**field_1,direction_1**&sortBy=**field_2,direction_2**...
+
+The API currently supports these two directions:
+
+- **asc**: Sorting in an ascending order based on field's value.
+- **desc**: Sorting in a descending order based on field's value.
+
+Please note that if you omit the direction in the sortBy parameter's value, it will be considered as an ascending sorting direction.
+Also note that when no sorting instructions is provided in URL, the API will return the results by sorting them on their ID.
+
+Here are some examples:
+
+- http://localhost:3000/posts?page=1&size=5&**sortBy=userId,desc&sortBy=title,desc**<br/>
+  This request will returns the posts sorted by their userId in a descending order, then each userId records being sorted by title.
+
 ### TODO
 
 These features will be implemented later:
 
-- sorting
 - nested lookup

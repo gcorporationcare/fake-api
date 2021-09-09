@@ -58,7 +58,8 @@ app.get('/:model', (req, res) => {
     const page = req.query.page || 1;
     const size = req.query.size || 10;
     const filters = req.query.filters || [];
-    const filteredRecords = utils.filteredData(filters, records);
+    const sortBy = req.query.sortBy || [];
+    const filteredRecords = utils.filteredData(filters, sortBy, records);
     const result = all ?
         filteredRecords : utils.pagedData(page, size, filteredRecords);
     res.end(JSON.stringify(result));

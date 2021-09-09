@@ -54,17 +54,29 @@ exports.pagedData = (page, size, array) => {
 /**
  * Apply filters on given data
  * @param {*} filters the array of filters to apply
+ * @param {*} sortBy the array containing sorting instructions 
  * @param {*} records the records to apply filters on 
  * @returns the filtered records
  */
-exports.filteredData = (filters, records) => {
-    // 1- Preparing data
-    if (this.isNullOrEmpty(records) || this.isNullOrEmpty(filters)) {
-        // No filters to apply
+exports.filteredData = (filters, sortBy, records) => {
+    if (this.isNullOrEmpty(records)) {
+        // No need to go further
         return records;
-    } // 2- Selected consistent filters and applying to records
+    }
     const cleanedFilters = safeFilters(filters);
-    return applyFilters(cleanedFilters, records);
+    const cleanedSortBy = safeSortBy(sortBy);
+    let sortedRecords = records;
+    // 1- Sorting data
+    if (!this.isNullOrEmpty(cleanedSortBy)) {
+        sortedRecords = applySortBy(cleanedSortBy, sortedRecords);
+    }
+    // 2- Filtering data
+    if (!this.isNullOrEmpty(cleanedFilters)) {
+        // Selected consistent filters and applying to records
+        return applyFilters(cleanedFilters, sortedRecords);
+    }
+    // No filters to apply
+    return sortedRecords;
 };
 
 /**
@@ -146,7 +158,7 @@ exports.findById = (req, res, database) => {
  */
 const applyFilters = (filters, records) => {
     if (this.isNullOrEmpty(filters) || this.isNullOrEmpty(records)) {
-    // 1- If no record or no filters, no need to go further...
+        // 1- If no record or no filters, no need to go further...
         return records;
     }
     const idField = 'id';
@@ -201,7 +213,28 @@ const applyFilters = (filters, records) => {
     }
     // 7- Returning the final records
     return filteredRecords;
-}
+};
+
+
+const applySortBy = (sortBy, records) => {
+    if (this.isNullOrEmpty(sortBy) || this.isNullOrEmpty(records)) {
+        // 1- If no record or no sortBy, no need to go further...
+        return records;
+    }
+    return records.sort(fieldSorter(sortBy));
+};
+
+/**
+ * Expression applying multiple filter on a single record
+ * @param {*} sortBy the sorting instructions
+ * @returns -1/0/1 depending on record value
+ */
+const fieldSorter = (sortBy) => (item1, item2) => sortBy.map(sort => {
+    const dir = sort.reverse ? -1 : 1;
+    const value1 = `${item1[sort.field]}`;
+    const value2 = `${item2[sort.field]}`;
+    return dir * value1.localeCompare(value2);
+}).reduce((p, n) => p ? p : n, 0);
 
 /**
  * Transform string filters into usable object of safe filters
@@ -211,7 +244,7 @@ const applyFilters = (filters, records) => {
 const safeFilters = (filters) => {
     if (this.isNullOrEmpty(filters)) {
         // 1- No filters to apply
-        return records;
+        return [];
     }
     let index = 0;
     let filtersArray = Array.isArray(filters) ? filters : [filters];
@@ -254,6 +287,36 @@ const safeFilters = (filters) => {
     });
 };
 
+
+/**
+ * Transform string sortBy into usable object of sorting instructions
+ * @param {string} sortBy the string received from API
+ * @returns a list of valid sorting operations {field, reverse:true/false}
+ */
+const safeSortBy = (sortBy) => {
+    if (this.isNullOrEmpty(sortBy)) {
+        // 1- No filters to apply
+        // By default, we will sort by ID
+        return [{
+            field: 'id',
+            reverse: false
+        }];
+    }
+    let sortByArray = Array.isArray(sortBy) ? sortBy : [sortBy];
+
+    return sortByArray.map((sortElement) => {
+        // 2- Reading field and direction
+        const order = sortElement.split(SORT_DELIMITER);
+        const field = order[0];
+        const direction = order.length < 2 ? SORT_DIRECTIONS.ascending : order[1];
+        const reverse = SORT_DIRECTIONS.descending === direction.toLowerCase();
+        return {
+            field,
+            reverse
+        };
+    });
+};
+
 /**
  * List of available operators
  */
@@ -287,3 +350,9 @@ const OPERATORS_METHOD = {
 }
 const OPERATORS_DELIMITER = ';';
 const OPERATORS_OR = '|';
+
+const SORT_DIRECTIONS = {
+    ascending: 'asc',
+    descending: 'desc',
+};
+const SORT_DELIMITER = ',';
