@@ -5,8 +5,8 @@ This project was generated with Node JS version 14.17.4.
 
 ## Development server
 
-Run `node app.js` for a dev server and navigate to `http://localhost:3000/`.
-You must restart the app every time you change any of the source files.
+Run `node index.js` for a dev server and navigate to `http://localhost:3000/`.</br>
+You must restart the app every time you change any of the source files, unless you want to enable _live-reload_ feature, in such a case, you should run `npm run dev`.
 
 ## API documentation
 
@@ -21,7 +21,7 @@ This API provide 6 different resources available at the following URLs:
 - **[/todos](http://localhost:3000/todos)**: 200 todos
 - **[/users](http://localhost:3000/users)**: 10 users
 
-**Note**: These data are copied from [JsonPlaceHolder](https://jsonplaceholder.typicode.com/) and saved in the data folder of this repository.
+**Note**: These data are copied from [JsonPlaceHolder](http://localhost:3000/) and saved in the data folder of this repository.
 
 ### Routes
 
@@ -88,7 +88,7 @@ Only basic HTTP methods are supported:
 - **PUT**: For updating the record with provided ID (no data validation).
 
   ```js
-  fetch('https://jsonplaceholder.typicode.com/posts/1', {
+  fetch('http://localhost:3000/posts/1', {
     method: 'PUT',
     body: JSON.stringify({
       id: 1,
@@ -147,9 +147,9 @@ This API provide a filtering feature triggered by the keyword **filters** in URL
 
 > Each filtering operation is a new query parameter **filters** added to the URL.<br/>
 
-> Operands in a single operation are delimited by a **semi-colon** ("**;**").
+> Operands in a single operation are delimited by a **colon** ("**,**").
 
-> Final URL will be similar to http://hostname/modelname?filters=**field_1:operator_1:value_1**&filters=**field_2:operator_2:value_2**...
+> Final URL will be similar to http://hostname/modelname?filters=**field_1,operator_1,value_1**&filters=**field_2,operator_2,value_2**...
 
 The API currently supports these operators:
 
@@ -164,33 +164,28 @@ The API currently supports these operators:
 - **like**: like
 - **not like**: notLike
 
-Here are some examples:
+Here are some examples (note that the filters param values may need escaping depending on your system):
 
-- http://localhost:3000/posts?page=1&size=5&**filters=title%3A%3D%3D%3Aeum%20et%20est%20occaecati**<br/>
+- http://localhost:3000/posts?page=1&size=5&**filters=title,==,eum et est occaecati**<br/>
   This request will give us a single record since only one record have matching title.
 
-  > The non escaped version of filters param is **title:==:eum et est occaecati**.
-
-- http://localhost:3000/posts?page=1&size=5&**filters=noId%3A%3D%3D%3Aeum%20et%20est%20occaecati**<br/>
+- http://localhost:3000/posts?page=1&size=5&**filters=noId,==,eum et est occaecati**<br/>
   This request will not give any result since the field named **noId** does not exist on model post.
 
-  > The non escaped version of filters is respectively **noId;=;eum et est occaecati**.
-
-- http://localhost:3000/posts?page=1&size=5&**filters=title%3B%3E%3Ba**&**filters=id%3B%3E%3B10**&**filters=id%3Bin%3B%5B12%2C13%5D**<br/>
+- http://localhost:3000/posts?page=1&size=5&**filters=title,>,a**&**filters=id,>,10**&**filters=id,in,12;13**<br/>
   This request will return exactly 2 records since only 2 posts have a _title_ greater than _a_ **and** an _id_ greater than _10_ **and** an _id_ in the array _[12, 13]_.
-  > The non escaped version of filters are respectively **title;>;a**, **id;>;10** and **id;in;[12,13]**.
 
-Please also keep in mind that you can do (basic) logical operations between one filter operations and the previously applied ones.
+Please also note that you can do (basic) logical operations between one filter operations and the previously applied ones.
 By default, when multiple filtering operations are applied, the API will do an **and-operation** (condition_N && condition_N+1 &&...).
 You can alter this behavior by prefixing the field's name of the next operation with a **pipe (|)**. (condition_N || condition_N+1 || ...).
 All operations are applied in FIFO, without any relation of priority between them: `condition_N || condition_N+1 && condition_N+2` will apply the mathematical operation `(condition_N || condition_N+1) && condition_N+2`.
 
-- http://localhost:3000/posts?page=1&size=10&**filters=id%3Bin%3B%5B2%2C4%2C6%2C8%2C10%2C12%2C14%5D**&**filters=id%3Bin%3B%5B2%2C4%2C6%2C8%2C10%2C12%2C14%5D**<br/>
-  This request return the posts with the IDs **6** & **12** since they are the sole intersections between the set `[2,4,6,8,10,12,14]` and the set `[3,6,9,12]`.
+- http://localhost:3000/posts?page=1&size=10&**filters=id,in,2;4;6;8;10;12;14**&**filters=id,in,3;6;9;12**<br/>
+  This request return the posts with the IDs **6** & **12** since they are the sole intersections between the set `2;4;6;8;10;12;14` and the set `3;6;9;12`.
 
-- http://localhost:3000/posts?page=1&size=10&**filters=id%3Bin%3B%5B2%2C4%2C6%2C8%2C10%2C12%2C14%5D**&**filters=%7Cid%3Bin%3B%5B3%2C6%2C9%2C12%5D**<br/>
-  This request return 9 posts which have their IDs in at least one of the two sets `[2,4,6,8,10,12,14]` and the set `[3,6,9,12]`.
-  > Mark the presence of the escaped pipe character **%7C** at the start of the second filters parameter.
+- http://localhost:3000/posts?page=1&size=10&**filters=id,in,2;4;6;8;10;12;14**&**filters=|id,in,3;6;9;12**<br/>
+  This request return 9 posts which have their IDs in at least one of two sets: the set `2;4;6;8;10;12;14` and the set `3;6;9;12`.
+  > Mark the presence of the pipe character **|** at the start of the second filters parameter which act like a **or**.
 
 ### Sorting
 
@@ -200,7 +195,7 @@ This API provide a sorting feature triggered by the keyword **sortBy** in URL qu
 
 > For a single sorting operation, we must retrieve the field of the record to base the sorting on, and also the direction of this sorting, separated from field's name by a **colon** ("**,**").
 
-> Final URL will be similar to http://hostname/modelname?sortBy=**field_1,direction_1**&sortBy=**field_2,direction_2**...
+> Final URL will be similar to http://localhost:3000/posts?**sortBy=field_1,direction_1**&**sortBy=field_2,direction_2**...
 
 The API currently supports these two directions:
 
@@ -212,8 +207,15 @@ Also note that when no sorting instructions is provided in URL, the API will ret
 
 Here are some examples:
 
+- http://localhost:3000/posts?page=1&size=5&**sortBy=id,desc**<br/>
+  This request will returns the posts sorted by their ID in a descending order.
+
 - http://localhost:3000/posts?page=1&size=5&**sortBy=userId,desc&sortBy=title,desc**<br/>
   This request will returns the posts sorted by their userId in a descending order, then each userId records being sorted by title.
+
+### Swagger
+
+This API also expose its documentation by using Swagger features. This documentation is available under the endpoint: **http://localhost:3000/api-docs**
 
 ### TODO
 

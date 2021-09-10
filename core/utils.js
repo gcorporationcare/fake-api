@@ -1,4 +1,4 @@
-const fs = require("fs");
+const fs = require('fs');
 
 
 /**
@@ -8,7 +8,7 @@ const fs = require("fs");
  */
 exports.readDataFile = (file) => {
     return JSON.parse(
-        fs.readFileSync(`${__dirname}/data/${file}.json`, 'utf8')
+        fs.readFileSync(`${__dirname}/../data/${file}.json`, 'utf8')
     );
 };
 
@@ -84,7 +84,10 @@ exports.filteredData = (filters, sortBy, records) => {
  * @param {*} res the response that will be sent to user
  */
 exports.notFound = (res) => {
-    res.status(404).send('Not found');
+    res.status(404).send({
+        code: 404,
+        message: 'Not found'
+    });
 }
 
 /**
@@ -111,13 +114,13 @@ exports.isNullOrEmpty = (array) => {
 
 /**
  * Find all records related to a table
- * @param {*} req the original user request
+ * @param {*} model the targeted model
  * @param {*} res the response that will be returned
  * @param {*} database the database object containing loaded records
  * @returns an array of records otherwise null
  */
-exports.findAll = (req, res, database) => {
-    const records = database[req.params.model];
+exports.findAll = (model, res, database) => {
+    const records = database.get(model).value();
     if (!records) {
         this.notFound(res);
         return null;
@@ -127,25 +130,158 @@ exports.findAll = (req, res, database) => {
 
 /**
  * Find record with given ID
- * @param {*} req the original request
+ * @param {*} model the targeted model
+ * @param {*} id the targeted ID
  * @param {*} res the response that will be returned
  * @param {*} database the database object containing loaded records
  * @returns the record with the ID in req params otherwise null
  */
-exports.findById = (req, res, database) => {
-    const records = this.findAll(req, res, database);
-    const id = +req.params.id;
-    if (this.isNullOrEmpty(records) || !id) {
+exports.findById = (model, id, res, database) => {
+    const recordId = +id;
+    const record = database.get(model).find({ 
+        id: recordId
+    }).value();
+    if (!record) {
         this.notFound(res);
         return null;
     }
-    const record = records.filter((item) => item.id === +id);
-    if (this.isNullOrEmpty(record)) {
-        this.notFound(res);
-        return null;
-    }
-    return record[0];
+    return record;
 }
+
+
+/**
+ * Deal with get page request
+ * @param {*} model the targeted model
+ * @param {*} req the received request
+ * @param {*} res the response that will be sent
+ */
+exports.getPage = (model, req, res) => {
+    applyJsonContentType(res);
+    const records = this.findAll(model, res, req.app.db);
+    if (!records) {
+        return;
+    }
+    const all = req.query.all || false;
+    const page = req.query.page || 1;
+    const size = req.query.size || 10;
+    const filters = req.query.filters || [];
+    const sortBy = req.query.sortBy || [];
+    const filteredRecords = this.filteredData(filters, sortBy, records);
+    const result = all ?
+        filteredRecords : this.pagedData(page, size, filteredRecords);
+    res.end(JSON.stringify(result));
+};
+
+/**
+ * Deal with get single record request
+ * @param {*} model the targeted model
+ * @param {*} req the received request
+ * @param {*} res the response that will be sent
+ */
+exports.get = (model, req, res) => {
+    applyJsonContentType(res);
+    const record = this.findById(model, req.params.id, res, req.app.db);
+    if (!record) {
+        return;
+    }
+    res.end(JSON.stringify(record));
+};
+
+/**
+ * Deal with create record request
+ * @param {*} model the targeted model
+ * @param {*} req the received request
+ * @param {*} res the response that will be sent
+ */
+exports.post = (model, req, res) => {
+    applyJsonContentType(res);
+    // Update sequences
+    const newId = req.app.sequences[model];
+    req.app.sequences[model] += 1;
+
+    // Add new record and return it
+    const newRecord = { ...req.body, id: newId };
+    req.app.db.get(model).push(newRecord).write();
+    res.end(JSON.stringify(newRecord));
+};
+
+/**
+ * Deal with edit record request
+ * @param {*} model the targeted model
+ * @param {*} req the received request
+ * @param {*} res the response that will be sent
+ */
+exports.put = (model, req, res) => {
+    applyJsonContentType(res);
+    let record = this.findById(model, req.params.id, res, req.app.db);
+    if (!record) {
+        return;
+    }
+    const newBody = req.body;
+    delete newBody.id;
+    record = Object.assign(record, newBody);
+    req.app.db.get(model).find({
+        id: record.id
+    }).assign(record).write();
+    res.end(JSON.stringify(record));
+};
+
+/**
+ * Deal with remove single record request
+ * @param {*} model the targeted model
+ * @param {*} req the received request
+ * @param {*} res the response that will be sent
+ */
+exports.remove = (model, req, res) => {
+    applyJsonContentType(res);
+    const record = this.findById(model, req.params.id, res, req.app.db);
+    if (!record) {
+        return;
+    }
+    req.app.db.get(model).remove({id: record.id}).write();
+    res.end(JSON.stringify({ removed: 1 }));
+};
+
+/**
+ * Deal with remove all records request
+ * @param {*} model the targeted model
+ * @param {*} req the received request
+ * @param {*} res the response that will be sent
+ */
+exports.removeAll = (model, req, res) => {
+    applyJsonContentType(res);
+    const records = this.findAll(model, res, req.app.db);
+    if (!records) {
+        return;
+    }
+    const removed = records.length;
+    req.app.db.get(model).remove().write();
+    res.end(JSON.stringify({ removed }));
+};
+
+/**
+ * Deal with all unexpected errors on requests
+ * @param {*} err the raised error
+ * @param {*} req the received request
+ * @param {*} res the response that will be sent
+ * @param {*} next the next item in HTTP filters
+ */
+exports.errorHandler = (err, req, res, next) => {
+    res.setHeader('Content-Type', 'application/json');
+    res.status(500).send({
+        code: 500,
+        message: 'Internal server error',
+        stack: err.stack
+    });
+};
+
+/**
+ * Useful paths values
+ */
+exports.PATHS = {
+    root: '',
+    id: '/:id'
+};
 
 // -----------------------------------------------------------------------------
 // PRIVATE METHODS
@@ -208,14 +344,18 @@ const applyFilters = (filters, records) => {
         filters[index + 1] = {
             field: idField,
             operator: 'in',
-            value: JSON.stringify(filteredRecords.map((record) => record.id))
+            value: filteredRecords.map((record) => record.id).join(ARRAY_VALUE_DELIMITER)
         };
     }
     // 7- Returning the final records
     return filteredRecords;
 };
 
-
+/**
+ * Sort the records with given instructions
+ * @param {*} sortBy the sorting instructions
+ * @param {*} records the records to sort
+ */
 const applySortBy = (sortBy, records) => {
     if (this.isNullOrEmpty(sortBy) || this.isNullOrEmpty(records)) {
         // 1- If no record or no sortBy, no need to go further...
@@ -225,7 +365,7 @@ const applySortBy = (sortBy, records) => {
 };
 
 /**
- * Expression applying multiple filter on a single record
+ * Expression applying multiple sorting on a single record
  * @param {*} sortBy the sorting instructions
  * @returns -1/0/1 depending on record value
  */
@@ -318,6 +458,14 @@ const safeSortBy = (sortBy) => {
 };
 
 /**
+ * Set the content-type to JSON
+ * @param {*} res the response that will be sent
+ */
+const applyJsonContentType = (res) => {
+    res.header('Content-Type', 'application/json');
+};
+
+/**
  * List of available operators
  */
 const OPERATORS = {
@@ -337,19 +485,21 @@ const OPERATORS = {
  * Filtering method matching supported operators
  */
 const OPERATORS_METHOD = {
-    equal: (record, field, value) => record[field] === value,
-    notEqual: (record, field, value) => record[field] !== value,
+    equal: (record, field, value) => `${record[field]}` === `${value}`,
+    notEqual: (record, field, value) => `${record[field]}` !== `${value}`,
     greaterThan: (record, field, value) => record && record[field] > value,
     greaterThanOrEqual: (record, field, value) => record && record[field] >= value,
     lesserThan: (record, field, value) => record && record[field] < value,
     lesserThanOrEqual: (record, field, value) => record && record[field] <= value,
-    in: (record, field, value) => JSON.parse(value).includes(record[field]),
-    notIn: (record, field, value) => !JSON.parse(value).includes(record[field]),
+    in: (record, field, value) => value.split(ARRAY_VALUE_DELIMITER).includes(`${record[field]}`),
+    notIn: (record, field, value) => !value.split(ARRAY_VALUE_DELIMITER).includes(`${record[field]}`),
     like: (record, field, value) => record && `${record[field]}`.includes(`${value}`),
     notLike: (record, field, value) => record && !`${record[field]}`.includes(`${value}`)
 }
-const OPERATORS_DELIMITER = ';';
+const OPERATORS_DELIMITER = ',';
 const OPERATORS_OR = '|';
+// Just for readability
+const ARRAY_VALUE_DELIMITER = ';';
 
 const SORT_DIRECTIONS = {
     ascending: 'asc',
