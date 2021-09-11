@@ -3,78 +3,67 @@ const FileSync = require('lowdb/adapters/FileSync');
 const swaggerUI = require('swagger-ui-express');
 const express = require('express');
 const low = require('lowdb');
-const {join} = require('path');
+const { join } = require('path');
 const morgan = require('morgan');
 const cors = require('cors');
-const docs = require('./docs');
 
 // Local dependencies
+const docs = require('./docs');
 const utils = require('./core/utils');
 const routes = require('./core/routes');
+const auth = require('./core/auth');
 
-
-// 1- Generate database and enable synch with db.json file
-const DATABASE = {
-    albums: utils.readDataFile('albums'),
-    comments: utils.readDataFile('comments'),
-    photos: utils.readDataFile('photos'),
-    posts: utils.readDataFile('posts'),
-    todos: utils.readDataFile('todos'),
-    users: utils.readDataFile('users'),
-};
-
-const SEQUENCE = {
-    albums: utils.nextId(DATABASE.albums),
-    comments: utils.nextId(DATABASE.comments),
-    photos: utils.nextId(DATABASE.photos),
-    posts: utils.nextId(DATABASE.posts),
-    todos: utils.nextId(DATABASE.todos),
-    users: utils.nextId(DATABASE.users),
-};
-
+// 1- Generate a pseudo-database by synching with JSON file
 const adapter = new FileSync(join(__dirname, 'data', 'db.json'));
 const db = low(adapter);
-// Resetting database
-db.assign({
-    albums: DATABASE.albums,
-    comments: DATABASE.comments,
-    photos: DATABASE.photos,
-    posts: DATABASE.posts,
-    todos: DATABASE.todos,
-    users: DATABASE.users,
-}).write();
 
 // 2- Prepare express app by adding global values
 const app = express();
+app.disable('x-powered-by');
 app.db = db;
-app.sequences = SEQUENCE;
+utils.resetDatabase(app);
 
-//enable CORS for request verbs, and also enabling logger
+// Enable CORS for request verbs, and also enabling logger
 app.use(morgan('combined'));
-app.use(cors());
-app.use(express.urlencoded({
-    extended: true
-}));
+const corsOptions = {
+  origin: 'localhost',
+};
+app.use(cors(corsOptions));
+app.use(
+  express.urlencoded({
+    extended: true,
+  })
+);
 
 // Enabling JSON
 app.use(express.json());
 
-
-// 3- Adding endpoints to application
-Object.keys(routes.endpoints).forEach(
-    (route) => app.use(`/${route}`, routes.endpoints[route])
+// 3- Adding models endpoints to application
+Object.keys(routes.endpoints).forEach((route) =>
+  app.use(`/${route}`, routes.endpoints[route])
 );
-app.use('/api-docs',swaggerUI.serve,swaggerUI.setup(docs));
+app.use('/auth', auth.router);
+
+// 4- Adding Swagger and other useful endpoints
+const swaggerDocs = docs.generate(app.rawDatabase);
+app.use('/api-docs', swaggerUI.serve, swaggerUI.setup(swaggerDocs));
+app.get('/swagger.json', (req, res) => {
+  res.json(swaggerDocs);
+});
+app.get('/reset', (req, res) => {
+  utils.resetDatabase(req.app);
+  res.json({ now: new Date() });
+});
+
+// 5- Adding global errors handler
 app.use(utils.errorHandler);
 
-
-//4- Starting the application.
+// 6- Starting the application.
 const PORT = process.env.PORT || 3000;
-const initialize = async () => {    
-    app.listen(PORT);
+const initialize = async () => {
+  app.listen(PORT);
 };
 
-initialize()
-    .finally(
-        () => console.log(`Server running at http://127.0.0.1:${PORT}/`)
+initialize().finally(() =>
+  console.log(`Server running at http://localhost:${PORT}/`)
 );

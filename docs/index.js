@@ -4,10 +4,18 @@ const servers = require('./servers');
 const components = require('./components');
 const models = require('./models');
 
-module.exports = {
+/**
+ * Generate swagger compatible object
+ * @param {*} database raw database object
+ * @returns a swagger compatible documentation object
+ */
+exports.generate = (database) => {
+  return {
     ...basicInfo,
     ...servers,
     ...components,
-    ...models.PATHS,
-    ...models.TAGS,
+    paths: models.providePaths(database),
+    tags: models.provideTags(),
+    security: [{ bearerAuth: [] }],
+  };
 };
